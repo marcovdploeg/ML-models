@@ -39,6 +39,8 @@ class DecisionTreeClassifierModified:
         if self.random_state is not None:
             np.random.seed(self.random_state)
         self.tree = None  # to hold the tree structure after fitting
+        # To hold the number of labels in the training data:
+        self.N_original_labels = None
     
     def gini_impurity(self, y):
         """
@@ -269,13 +271,13 @@ class DecisionTreeClassifierModified:
         if (self.max_depth is not None and depth >= self.max_depth):
             if self.verbose:
                 print(f"Stop at depth {depth} due to max_depth limit.")
-            majority_class = y.mode()[0]
-            return {'class': majority_class, 'is_leaf': True}
+            proba_dist = y.value_counts(normalize=True).to_dict()
+            return {'probas': proba_dist, 'is_leaf': True}
         elif len(y) < self.min_samples_split:
             if self.verbose:
                 print(f"Stopping at depth {depth} due to min_samples_split limit.")
-            majority_class = y.mode()[0]
-            return {'class': majority_class, 'is_leaf': True}
+            proba_dist = y.value_counts(normalize=True).to_dict()
+            return {'probas': proba_dist, 'is_leaf': True}
 
         # For the Gini score increase and min_samples_leaf criteria, 
         # we need to do the split first
@@ -295,16 +297,15 @@ class DecisionTreeClassifierModified:
            len(y_right) < self.min_samples_leaf:
             if self.verbose:
                 print(f"Stopping at depth {depth} due to min_samples_leaf limit.")
-            majority_class = y.mode()[0]
-            return {'class': majority_class, 'is_leaf': True}
-        
-        better_score = \
-            self.check_impurity_decrease_threshold(y, y_left, y_right)
+            proba_dist = y.value_counts(normalize=True).to_dict()
+            return {'probas': proba_dist, 'is_leaf': True}
+
+        better_score = self.check_impurity_decrease_threshold(y, y_left, y_right)
         if not better_score:
             if self.verbose:
                 print(f"Stop at depth {depth} as no better score is found.")
-            majority_class = y.mode()[0]
-            return {'class': majority_class, 'is_leaf': True}
+            proba_dist = y.value_counts(normalize=True).to_dict()
+            return {'probas': proba_dist, 'is_leaf': True}
 
         # If none of the criteria are met, we continue here
         # If it is a boolean feature we can just take it out, 
@@ -336,6 +337,7 @@ class DecisionTreeClassifierModified:
         y (Series): Labels.
         """
         self.tree = self.build_tree(X, y)
+        self.N_original_labels = len(y.unique())
     
     def predict(self, X):
         """
@@ -368,9 +370,51 @@ class DecisionTreeClassifierModified:
                     else:
                         node = node['right']
                 # After going down, if the node is not a leaf, repeat this
-            # When we reach a leaf node, append the predicted class 
-            # to the predictions
-            predictions.append(node['class'])
+            # When we reach a leaf node, get the class with the highest probability
+            # and append the predicted class to the predictions
+            proba_dist = node['probas']
+            predicted_class = max(proba_dist, key=proba_dist.get)
+            predictions.append(predicted_class)
+        
+        return np.array(predictions)
+    
+    def predict_proba(self, X):
+        """
+        Predict the probability distribution for each sample in X 
+        using the decision tree.
+        
+        Parameters:
+        X (DataFrame): Feature dataframe for which to make predictions.
+        
+        Returns:
+        array-like: Predicted probability distributions for each sample in X.
+        """
+        predictions = []
+        
+        for _, row in X.iterrows():
+            node = self.tree  # start at the root node
+            while not node['is_leaf']:
+                feature = node['feature']
+                split_value = node['split']
+                data_feature_value = row[feature]
+                if split_value is None:  # Boolean feature
+                    if data_feature_value == 0:
+                        # We trained the model to go left for 0
+                        node = node['left']
+                    else:
+                        node = node['right']
+                else:  # Continuous feature
+                    if data_feature_value <= split_value:
+                        # We trained the model to go left for <= split_value
+                        node = node['left']
+                    else:
+                        node = node['right']
+                # After going down, if the node is still not a leaf, repeat this
+            # When we reach a leaf node, take the predicted classes probabilities
+            proba_dist = node['probas']
+            # Convert the probabilities to a list in the order of the original labels
+            all_probas = [proba_dist.get(i, 0) for i in range(self.N_original_labels)]
+            predictions.append(all_probas)
         
         return np.array(predictions)
 
@@ -386,6 +430,34 @@ class DecisionTreeClassifierModified:
         float: Accuracy score.
         """
         return np.mean(y_true == y_pred)
+    
+    def log_loss(self, y_true, y_pred_proba, epsilon=1e-10):
+        """
+        Calculate the log loss between true labels 
+        and predicted probabilities.
+
+        Parameters:
+        y_true (array-like): True labels, can be one-hot encoded.
+        y_pred_proba (array-like): Predicted probabilities for each class.
+        epsilon (float, optional): Small value to avoid log(0). 
+                                   Default is 1e-10.
+
+        Returns:
+        float: Log loss value.
+        """
+        # Clip probabilities to avoid log(0)
+        y_pred_proba = np.clip(y_pred_proba, epsilon, 1 - epsilon)
+
+        # Convert y_true to the same shape as y_pred_proba 
+        # if necessary (so if more than 2 classes)
+        if y_true.ndim == 1:
+            y_true = np.eye(len(y_pred_proba[0]))[y_true]
+
+        # Calculate log loss, with mean for the (1/N) sum
+        # Note we don't need to do the second sum over labels, 
+        # as y_true is already one-hot encoded
+        loss = -np.mean(y_true * np.log(y_pred_proba))
+        return loss
 
 if __name__ == "__main__":
     print("Testing the DecisionTreeClassifierModified class.")
@@ -413,3 +485,8 @@ if __name__ == "__main__":
     print(f"Accuracy on iris data: {accuracy:.2f}")
     # Note that we indeed see a change in accuracy now due to
     # the usage of less and random features at each node
+
+    # Test the predict_proba method
+    y_pred_proba = decision_tree.predict_proba(X_test)
+    log_loss_value = decision_tree.log_loss(y_test, y_pred_proba)
+    print(f"Log loss on iris data: {log_loss_value:.4f}")

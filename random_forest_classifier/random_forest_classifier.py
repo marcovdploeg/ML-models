@@ -124,6 +124,24 @@ class RandomForestClassifier:
                                                  axis=0, arr=predictions)
         return forest_predictions
     
+    def predict_proba(self, X):
+        """
+        Make predictions for probability distributions
+        using the random forest.
+        
+        Parameters:
+        X (DataFrame): The data to make predictions on.
+
+        Returns:
+        array-like: The predicted probability distributions
+                    for the input data.
+        """
+        predictions = np.array([tree.predict_proba(X) for tree in self.forest])
+        # Average the predictions of all trees
+        forest_predictions = np.apply_along_axis(lambda x: np.mean(x, axis=0), 
+                                                 axis=0, arr=predictions)
+        return forest_predictions
+    
     def score(self, y_true, y_pred):
         """
         Calculate the accuracy of predictions.
@@ -136,6 +154,34 @@ class RandomForestClassifier:
         float: Accuracy score.
         """
         return np.mean(y_true == y_pred)
+    
+    def log_loss(self, y_true, y_pred_proba, epsilon=1e-10):
+        """
+        Calculate the log loss between true labels 
+        and predicted probabilities.
+
+        Parameters:
+        y_true (array-like): True labels, can be one-hot encoded.
+        y_pred_proba (array-like): Predicted probabilities for each class.
+        epsilon (float, optional): Small value to avoid log(0). 
+                                   Default is 1e-10.
+
+        Returns:
+        float: Log loss value.
+        """
+        # Clip probabilities to avoid log(0)
+        y_pred_proba = np.clip(y_pred_proba, epsilon, 1 - epsilon)
+
+        # Convert y_true to the same shape as y_pred_proba 
+        # if necessary (so if more than 2 classes)
+        if y_true.ndim == 1:
+            y_true = np.eye(len(y_pred_proba[0]))[y_true]
+
+        # Calculate log loss, with mean for the (1/N) sum
+        # Note we don't need to do the second sum over labels, 
+        # as y_true is already one-hot encoded
+        loss = -np.mean(y_true * np.log(y_pred_proba))
+        return loss
     
 if __name__ == "__main__":
     print("Testing the RandomForestClassifier class.")
@@ -160,3 +206,8 @@ if __name__ == "__main__":
     y_pred = random_forest.predict(X_test)
     accuracy = random_forest.score(y_test, y_pred)
     print(f"Accuracy on iris data: {accuracy:.2f}")
+
+    # Test the predict_proba method
+    y_pred_proba = random_forest.predict_proba(X_test)
+    log_loss_value = random_forest.log_loss(y_test, y_pred_proba)
+    print(f"Log loss on iris data: {log_loss_value:.4f}")

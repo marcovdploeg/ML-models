@@ -2,6 +2,7 @@
 
 This repository contains the code for decision tree and random forest classifier and regressor machine learning models. 
 The classification decision tree uses the Gini impurity to improve the tree, while the regression tree uses the variance.
+The classification models can predict both single class labels and probability distributions for the labels.
 A maximum depth, minimum samples per split and minimum samples per leaf can be given to control the tree.
 In the future, other evaluation metrics and options like other score criteria could be added.
 
