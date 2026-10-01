@@ -6,28 +6,34 @@ import numpy as np
 import pandas as pd
 
 class DecisionTreeRegressorModified:
-    def __init__(self, max_depth=None, min_samples_split=2, min_samples_leaf=1,
-                 verbose=False, threshold=0.0, num_features=None, random_state=42):
-        """
-        Initialize the Decision Tree Classifier.
+    def __init__(
+        self, 
+        max_depth: int | None = 3, 
+        min_samples_split: int = 2, 
+        min_samples_leaf: int = 1,
+        verbose: bool = False, 
+        threshold:float = 0.0, 
+        num_features: int | None = None, 
+        random_state: int | None = 42
+    ) -> None:
+        """Initialize the modified Decision Tree Regressor.
 
-        Parameters:
-        max_depth (int, optional): Maximum depth of the tree.
-                                   Default is None (no limit).
-        min_samples_split (int, optional): Minimum number of samples required
-                                     to split an internal node. Default is 2.
-        min_samples_leaf (int, optional): Minimum number of samples required
-                                         to be at a leaf node. Default is 1.
-        verbose (bool, optional): If True, print the reasons for stopping.
-                                  Default is False.
-        threshold (float, optional): The threshold to compare against
-                                     for increasing score. Default=0.0.
-        num_features (int, optional): Number of features to consider in each
-                                      node. If None, one-third of the 
-                                      total number of features rounded down
-                                      is used. Default is None.
-        random_state (int, optional): Random seed for reproducibility.
-                                      Default is 42.
+        Args:
+            max_depth (int | None): Maximum depth of the tree. If None,
+                there is no limit. Defaults to 3.
+            min_samples_split (int): Minimum number of samples required
+                to split an internal node. Defaults to 2.
+            min_samples_leaf (int): Minimum number of samples required
+                to be at a leaf node. Defaults to 1.
+            verbose (bool): If True, print the reasons for stopping.
+                Defaults to False.
+            threshold (float): The threshold to compare against for
+                increasing score. Defaults to 0.0.
+            num_features (int | None): Number of features to consider in
+                each node. If None, one-third of the total number of
+                features rounded down is used. Defaults to None.
+            random_state (int | None): Random seed for reproducibility.
+                Omitted if None. Defaults to 42.
         """
         self.max_depth = max_depth
         self.min_samples_split = min_samples_split
@@ -40,16 +46,19 @@ class DecisionTreeRegressorModified:
             np.random.seed(self.random_state)
         self.tree = None  # to hold the tree structure after fitting
 
-    def var_weighted(self, y_left, y_right):
-        """
-        Calculate the weighted variance after a split.
+    def var_weighted(
+        self, 
+        y_left: pd.Series, 
+        y_right: pd.Series
+    ) -> float:
+        """Calculate the weighted variance after a split.
         
-        Parameters:
-        y_left (array-like): Array of labels for the left dataset.
-        y_right (array-like): Array of labels for the right dataset.
+        Args:
+            y_left (pd.Series): Array of target values for the left dataset.
+            y_right (pd.Series): Array of target values for the right dataset.
         
         Returns:
-        float: Weighted variance value.
+            float: Weighted variance value.
         """
         N_left = len(y_left)
         N_right = len(y_right)
@@ -58,22 +67,26 @@ class DecisionTreeRegressorModified:
         var_left = np.var(y_left) if N_left > 1 else 0.0
         var_right = np.var(y_right) if N_right > 1 else 0.0
         
-        var_weighted = (N_left / N_total) * var_left + \
-                       (N_right / N_total) * var_right
+        var_weighted = (
+            (N_left / N_total) * var_left + (N_right / N_total) * var_right
+        )
         return var_weighted
     
-    def determine_continuous_split(self, X_feature):
-        """
-        Determine the split points for a continuous feature, being the
+    def determine_continuous_split(
+        self, 
+        X_feature: pd.Series
+    ) -> list | float:
+        """Determine the split points for a continuous feature, being the
         first quantile, median, and third quantile. If there are 3 or less
         unique values, this is not useful, so return the median instead.
 
-        Parameters:
-        X_feature (Series): Series of feature values.
+        Args:
+            X_feature (pd.Series): Series of feature values.
 
         Returns:
-        (list or float): List of split points [first quantile, median, third quantile],
-                         median if not enough data to determine quantiles.
+            list | float: List of split points
+                [first quantile, median, third quantile],
+                or median if not enough data to determine quantiles.
         """
         if len(X_feature.unique()) <= 3:
             median = np.median(X_feature)
@@ -84,20 +97,25 @@ class DecisionTreeRegressorModified:
             third_quantile = np.quantile(X_feature, 0.75)
             return [first_quantile, median, third_quantile]
         
-    def split_node_and_find_best_split(self, X_feature, y):
-        """
-        Split a node based on the feature values in X_feature while
+    def split_node_and_find_best_split(
+        self, 
+        X_feature: pd.Series, 
+        y: pd.Series
+    ) -> tuple[pd.Series, pd.Series, float | None]:
+        """Split a node based on the feature values in X_feature while
         determining the best split point based on variance for
         continuous features.
         
-        Parameters:
-        X_feature (Series): Series of feature values.
-        y (Series): Series of target values.
+        Args:
+            X_feature (pd.Series): Series of feature values.
+            y (pd.Series): Target values.
         
         Returns:
-        Series: Two Series representing the left and right splits for y.
-        (float or None): The best split value for continuous features, 
-                         None for boolean features.
+            tuple[pd.Series, pd.Series, float | None]: A tuple containing:
+                - y_left (pd.Series): Target values of the left split for y.
+                - y_right (pd.Series): Target values of the right split for y.
+                - best_split_value (float | None): The best split value for
+                    continuous features, None for boolean features.
         """
         # First figure out if the feature is continuous or boolean
         # This works for both 0/1 and True/False as values
@@ -132,24 +150,30 @@ class DecisionTreeRegressorModified:
         
         return y_left, y_right, best_split_value
     
-    def determine_best_split(self, X, y):
-        """
-        Determine the best split for a dataset based on variance.
+    def determine_best_split(
+        self, 
+        X: pd.DataFrame, 
+        y: pd.Series
+    ) -> tuple[str, float | None]:
+        """Determine the best split for a dataset based on variance.
         
-        Parameters:
-        X (DataFrame): Feature dataframe.
-        y (Series): Target values.
+        Args:
+            X (pd.DataFrame): Feature dataframe.
+            y (pd.Series): Target values.
         
         Returns:
-        tuple: The best feature and the best split value 
-               (None for boolean features).
+            tuple[str, float | None]: A tuple containing:
+                - column (str): The best feature to split on.
+                - best_split_value (float | None): The best split value for
+                    continuous features, None for boolean features.
         """
         best_var = float('inf')
 
         for column in X.columns:
             X_feature = X[column]
-            y_left, y_right, best_split_value = \
+            y_left, y_right, best_split_value = (
                 self.split_node_and_find_best_split(X_feature, y)
+            )
             
             # Calculate variance for the split
             var = self.var_weighted(y_left, y_right)
@@ -158,40 +182,51 @@ class DecisionTreeRegressorModified:
                 best_split_feature = (column, best_split_value)
         return best_split_feature
     
-    def check_var_decrease_threshold(self, y, y_left, y_right):
-        """
-        Calculate the variance decrease from a split and if it meets
+    def check_var_decrease_threshold(
+        self, 
+        y: pd.Series, 
+        y_left: pd.Series, 
+        y_right: pd.Series
+    ) -> bool:
+        """Calculate the variance decrease from a split and if it meets
         a threshold.
         
-        Parameters:
-        y (array-like): Array of target values before the split.
-        y_left (array-like): Array of target values for the left dataset.
-        y_right (array-like): Array of target values for the right dataset.
-        threshold (float): The threshold to compare against.
+        Args:
+            y (pd.Series): Array of target values before the split.
+            y_left (pd.Series): Array of target values for the left dataset.
+            y_right (pd.Series): Array of target values for the right dataset.
         
         Returns:
-        bool: True if the variance decrease is greater than
-              the threshold, False otherwise.
+            bool: True if the variance decrease is greater than
+                the threshold, False otherwise.
         """
         var_before = np.var(y)
         var_after = self.var_weighted(y_left, y_right)
-        
         return (var_before - var_after) > self.threshold
     
-    def split_node_given_best_split(self, X, y, feature, best_split_value):
-        """
-        Split a node based on the feature values in X_feature given
+    def split_node_given_best_split(
+        self, 
+        X: pd.DataFrame, 
+        y: pd.Series, 
+        feature: str, 
+        best_split_value: float | None
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+        """Split a node based on the feature values in X[feature] given
         the predetermined best split point.
         
-        Parameters:
-        X (DataFrame): Array of feature values.
-        y (Series): Array of target values.
-        best_split_value (float or None): The best split value for
-                   continuous features, None for boolean features.
+        Args:
+            X (pd.DataFrame): Feature dataframe.
+            y (pd.Series):Target values.
+            feature (str): The feature to split on.
+            best_split_value (float | None): The best split value for
+                continuous features, None for boolean features.
         
         Returns:
-        DataFrame: Two DataFrames representing the left and right splits for X.
-        Series: Two Series representing the left and right splits for y.
+            tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+                - X_left (pd.DataFrame): Feature values for the left split.
+                - X_right (pd.DataFrame): Feature values for the right split.
+                - y_left (pd.Series): Target values for the left split.
+                - y_right (pd.Series): Target values for the right split.
         """
         X_feature = X[feature]
         if best_split_value is None:
@@ -209,15 +244,17 @@ class DecisionTreeRegressorModified:
         
         return X_left, X_right, y_left, y_right
     
-    def select_random_features(self, X):
-        """
-        Select a random subset of features from the DataFrame X.
+    def select_random_features(
+        self, 
+        X: pd.DataFrame
+    ) -> pd.DataFrame:
+        """Select a random subset of features from the DataFrame X.
         
-        Parameters:
-        X (DataFrame): Feature dataframe.
+        Args:
+            X (pd.DataFrame): Feature dataframe.
         
         Returns:
-        DataFrame: A DataFrame containing the selected features.
+            pd.DataFrame: A DataFrame containing the selected features.
         """
         total_features = X.shape[1]
         if self.num_features is None:
@@ -227,27 +264,34 @@ class DecisionTreeRegressorModified:
             # So we ensure it is at least 1
             num_features = max(1, num_features)
         elif self.num_features > total_features:
-            num_features = total_features  # ensure we don't exceed available features
+            # To ensure we don't exceed available features
+            num_features = total_features
         else:
             num_features = self.num_features
         
-        # Randomly select features to consider for the split, without replacement
-        selected_features = np.random.choice(X.columns, num_features, replace=False)
+        # Randomly select features, without replacement
+        selected_features = np.random.choice(
+            X.columns, num_features, replace=False
+        )
         X_selected = X[selected_features]
         return X_selected
     
-    def build_tree(self, X, y, depth=0):
-        """
-        Build up the tree recursively by fitting the training data.
-        This needs to start with depth at 0, which is passed
-        as an argument to make the recursion work.
+    def build_tree(
+        self, 
+        X: pd.DataFrame, 
+        y: pd.Series, 
+        depth: int = 0
+    ) -> dict:
+        """Build up the tree recursively by fitting the training data.
+        This needs to start with depth at 0, which is passed as
+        an argument to make the recursion work.
 
-        Parameters:
-        X (DataFrame): Feature dataframe.
-        y (Series): Target values.
+        Args:
+            X (pd.DataFrame): Feature dataframe.
+            y (pd.Series): Target values.
 
         Returns:
-        dict: A dictionary representing the decision tree.
+            dict: A dictionary representing the decision tree.
         """
         # First check all stopping criteria
         if (self.max_depth is not None and depth >= self.max_depth):
@@ -273,10 +317,13 @@ class DecisionTreeRegressorModified:
         # Because we do need the full feature set for the next recursion,
         # and X_left, X_right are not used otherwise and y_left, y_right
         # are the same for both, we do split on the full X here
-        X_left, X_right, y_left, y_right = \
+        X_left, X_right, y_left, y_right = (
             self.split_node_given_best_split(X, y, column, split_value)
-        if len(y_left) < self.min_samples_leaf or \
-           len(y_right) < self.min_samples_leaf:
+        )
+        if (
+            len(y_left) < self.min_samples_leaf
+            or len(y_right) < self.min_samples_leaf
+        ):
             if self.verbose:
                 print(f"Stopping at depth {depth} due to min_samples_leaf limit.")
             mean_value = y.mean()
@@ -310,28 +357,32 @@ class DecisionTreeRegressorModified:
             'right': right_subtree
         }
     
-    def fit(self, X, y):
-        """
-        Fit the decision tree regressor to the training data.
+    def fit(
+        self, 
+        X: pd.DataFrame, 
+        y: pd.Series
+    ) -> None:
+        """Fit the decision tree regressor to the training data.
         
-        Parameters:
-        X (DataFrame): Feature dataframe.
-        y (Series): Target values.
+        Args:
+            X (pd.DataFrame): Feature dataframe.
+            y (pd.Series): Target values.
         """
         self.tree = self.build_tree(X, y)
     
-    def predict(self, X):
-        """
-        Predict the value for each sample in X using the decision tree.
+    def predict(
+        self, 
+        X: pd.DataFrame
+    ) -> np.ndarray:
+        """Predict the value for each sample in X using the decision tree.
         
-        Parameters:
-        X (DataFrame): Feature dataframe for which to make predictions.
+        Args:
+            X (pd.DataFrame): Feature dataframe for which to make predictions.
         
         Returns:
-        array-like: Predicted value for each sample in X.
+            np.ndarray: Predicted value for each sample in X.
         """
         predictions = []
-        
         for _, row in X.iterrows():
             node = self.tree  # start at the root node
             while not node['is_leaf']:
@@ -350,22 +401,24 @@ class DecisionTreeRegressorModified:
                         node = node['left']
                     else:
                         node = node['right']
-                # After going down, if the node is still not a leaf, repeat this
+                # After going down, if the node is not a leaf, repeat this
             # When we reach a leaf node, append the predicted value
             predictions.append(node['value'])
-        
         return np.array(predictions)
     
-    def score(self, y_true, y_pred):
-        """
-        Calculate the root mean square error of predictions.
+    def score(
+        self, 
+        y_true: np.ndarray | pd.Series, 
+        y_pred: np.ndarray | pd.Series
+    ) -> float:
+        """Calculate the root mean square error of predictions.
         
-        Parameters:
-        y_true (array-like): True values.
-        y_pred (array-like): Predicted values.
+        Args:
+            y_true (np.ndarray | pd.Series): True values.
+            y_pred (np.ndarray | pd.Series): Predicted values.
         
         Returns:
-        float: Root mean square error.
+            float: Root mean square error.
         """
         return np.sqrt(np.mean((y_true - y_pred) ** 2))
 
@@ -373,7 +426,6 @@ if __name__ == "__main__":
     print("Testing the DecisionTreeRegressorModified class.")
 
     decision_tree = DecisionTreeRegressorModified(max_depth=3, num_features=None)
-
     iris_url = 'https://raw.githubusercontent.com/jbrownlee/Datasets/master/iris.csv'
     iris_data = pd.read_csv(iris_url, header=None)
     # Take the first column as target variable for this regression task
@@ -385,8 +437,9 @@ if __name__ == "__main__":
     X[4] = X[4].map(label_mapping)
 
     from sklearn.model_selection import train_test_split
-    X_train, X_test, y_train, y_test = \
-        train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
     
     # Fit the model
     decision_tree.fit(X_train, y_train)
